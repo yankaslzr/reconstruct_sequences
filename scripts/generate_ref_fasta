@@ -1,0 +1,13 @@
+Command-line for generation of FASTA sequence for the reference gene.
+
+
+cd /path_to_vcf_files
+
+samtools faidx /path_to_genome_fasta/Pfalciparum.genome.fasta Pf3D7_02_v3:271576-274917 > PF3D7_0206800_msp2_reference.fasta
+
+
+Next: Add this reference fasta to msp2_haplotypes_AFthresholds.fasta with the command-line below
+
+
+cat PF3D7_0206800_msp2_reference.fasta msp2_haplotypes_AFthresholds.fasta > msp2_haplotypes_AFthresholds_withREF.fasta
+
