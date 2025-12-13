@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+import os
+import textwrap
+
+# ---------- CONFIGURATIONS ----------
+ref_fasta = "/home/YEvellyn/Pfalciparum.genome.fasta"
+variants_tsv = "/data/output/vcf_files/msp2_variants.tsv"
+output_fasta = "/data/output/vcf_files/msp2_haplotypes_AFthresholds.fasta"
+
+chrom_msp2 = "Pf3D7_02_v3"
+start_msp2 = 271576  # 1-based inclusive
+end_msp2   = 274917  # 1-based inclusive
+
+# AF cutoffs you requested
+af_thresholds = [0.01, 0.05, 0.10, 0.20, 0.50, 0.90]
+
+# ---------- AUXILIARY FUNCTIONS ----------
+
+def load_reference_region(fasta_path, chrom, start, end):
+    """Load the sequence from the specified region [start, end] (1-based) of the given chromosome."""
+    seq = []
+    current_chrom = None
+    with open(fasta_path, "r") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                current_chrom = line[1:].split()[0]
+                continue
+            if current_chrom == chrom:
+                seq.append(line.upper())
+    if not seq:
+        raise ValueError(f"Chromosome {chrom} not found in {fasta_path}")
+    full_seq = "".join(seq)
+    # Convert to 0-based indexing
+    region_seq = full_seq[start-1:end]
+    if len(region_seq) != (end - start + 1):
+        raise ValueError("Region length does not match start/end positions.")
+    return region_seq
+
+def parse_variants(tsv_path, chrom, start, end):
+    """
+    Reads the TSV of variants and returns a dictionary:
+    variants_by_sample[sample] = list of dicts {pos, ref, alt, af}
+    If multiple ALT/AF are present, it chooses the one with the highest AF.
+    """
+    variants_by_sample = {}
+    with open(tsv_path, "r") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            cols = line.strip().split("\t")
+            if len(cols) < 6:
+                continue
+            chrom_v, pos_s, ref, alt_s, sample, af_s = cols[:6]
+
+            if chrom_v != chrom:
+                continue
+
+            pos = int(pos_s)
+            if pos < start or pos > end:
+                continue
+
+            # ALT and AF can be multi-allelic: A,G   0.2,0.8
+            alts = alt_s.split(",")
+            afs  = [float(x) for x in af_s.split(",")]
+
+            # Choose the ALT with the highest AF
+            best_idx = max(range(len(afs)), key=lambda i: afs[i])
+            best_alt = alts[best_idx]
+            best_af  = afs[best_idx]
+
+            variants_by_sample.setdefault(sample, []).append({
+                "pos": pos,
+                "ref": ref,
+                "alt": best_alt,
+                "af":  best_af,
+            })
+    return variants_by_sample
+
+def write_fasta_haplotypes(ref_seq, variants_by_sample, start, thresholds, out_path):
+    """
+    For each sample and each AF threshold, generates a haplotype sequence.
+    ref_seq: string of msp2 region
+    start: 1-based position of the start of the region in the chromosome
+    thresholds: list of minimum AF values
+    """
+    with open(out_path, "w") as out_fh:
+        for sample, var_list in sorted(variants_by_sample.items()):
+            for thr in thresholds:
+                seq_list = list(ref_seq)
+                # Apply variants with AF >= threshold
+                for v in var_list:
+                    if v["af"] >= thr:
+                        idx = v["pos"] - start  # 0-based in region
+                        # Optional REF check (you can comment out if you want)
+                        # if seq_list[idx] != v["ref"]:
+                        #     print(f"Warning: REF does not match in {sample} pos {v['pos']}")
+                        seq_list[idx] = v["alt"]
+                hap_seq = "".join(seq_list)
+                header = f">Sample={sample};AFmin={thr:.2f}"
+                out_fh.write(header + "\n")
+                for chunk in textwrap.wrap(hap_seq, 60):
+                    out_fh.write(chunk + "\n")
+
+# ---------- EXECUTION ----------
+
+if __name__ == "__main__":
+    print("Loading msp2 reference...")
+    ref_msp2 = load_reference_region(ref_fasta, chrom_msp2, start_msp2, end_msp2)
+    print(f"msp2 region size: {len(ref_msp2)} nt")
+
+    print("Reading msp2 variants...")
+    vars_by_sample = parse_variants(variants_tsv, chrom_msp2, start_msp2, end_msp2)
+    print(f"Number of samples with variants in msp2: {len(vars_by_sample)}")
+
+    print("Generating FASTA of haplotypes by AF cutoff...")
+    write_fasta_haplotypes(ref_msp2, vars_by_sample, start_msp2, af_thresholds, output_fasta)
+
+    print(f"Completed. FASTA saved in: {output_fasta}")
