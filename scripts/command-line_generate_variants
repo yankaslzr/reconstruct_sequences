@@ -1,0 +1,16 @@
+This command outputs a tab-delimited file (msp2_variants.tsv) containing genomic position, reference and alternate alleles, sample ID, genotype and allele frequency for all MSP2 variants across samples.
+
+cd /data/Yanka/ngs_ana2025/output/arquivos_annot
+
+for f in P35771_10[0-6][0-9]_T1.postfilter.SNP.final.annot.vcf.gz \
+         P35771_107[0-9]_T1.postfilter.SNP.final.annot.vcf.gz
+do
+    bcftools query \
+      -f '%CHROM\t%POS\t%REF\t%ALT[\t%SAMPLE\t%GT\t%AF]\n' \
+      -r Pf3D7_02_v3:271576-274917 \
+      "$f"
+done > msp2_variants.tsv
+
+
+
+  
