@@ -1,7 +1,7 @@
 # reconstruct_sequences
-Reconstructions of consensus fasta sequences; reconstructions of fasta sequences according to AF thresholds for specific genes.
+Reconstructions of consensus fasta sequences; reconstructions of fasta sequences according to AF thresholds for specific genes. It can be adapted to other targets. In this case, it was used for pfmsp2.
 
-# In this case, MSP2 haplotype reconstruction from targeted deep sequencing
+# MSP2 sequences reconstruction from targeted deep sequencing
 
 This repository documents the workflow used to reconstruct MSP2 gene sequences
 from Illumina targeted deep sequencing data of Plasmodium falciparum.
