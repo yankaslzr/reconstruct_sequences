@@ -38,7 +38,7 @@ haplotype comparison, and diversity analyses (e.g. using MEGA).
 - Gene ID: **PF3D7_0206800**
 - Chromosome: **Pf3D7_02_v3**
 - Coordinates (1-based, inclusive): **271576–274917**
-- Gene length: **3342 bp**
+
 
 ---
 
