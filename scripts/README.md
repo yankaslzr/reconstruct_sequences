@@ -55,3 +55,7 @@ Output: PF3D7_0206800_reference.fasta
 
 The reference sequence can be appended to the samples' FASTA file to
 facilitate alignment and comparative analyses.
+
+--
+
+4. To do the same for INDELS data, follow the steps in /scripts/generate_indels_file.
