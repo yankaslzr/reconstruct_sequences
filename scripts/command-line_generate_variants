@@ -1,4 +1,4 @@
-This command outputs a tab-delimited file (msp2_variants.tsv) containing genomic position, reference and alternate alleles, sample ID, genotype and allele frequency for all MSP2 variants across samples.
+This command outputs a tab-delimited file (msp2_variants.tsv) containing chromosome, position, reference and alternate alleles, sample ID, and allele frequency (AF) for MSP2 variants across samples.
 
 cd path/vcf_files
 
