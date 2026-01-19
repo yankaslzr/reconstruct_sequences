@@ -1,0 +1,72 @@
+INDEL processing and extraction for MSP2
+
+This section describes the additional steps required to process INDEL variants
+prior to MSP2 haplotype reconstruction.
+INDELs require extra normalization steps to ensure consistent representation
+before being applied to sequence reconstruction.
+
+## 1. First command-line (bgzip + tabix)
+Raw INDEL VCF files are first compressed using bgzip and indexed with tabix.
+The original uncompressed VCF files are preserved using the -k option.
+
+
+cd /path_to_files/vcf_indel_files
+
+for f in P35771_10[0-6][0-9]_T1_INDEL.filtered.final.PASS.bed.filtered.annot.vcf \
+         P35771_107[0-9]_T1_INDEL.filtered.final.PASS.bed.filtered.annot.vcf
+do
+  bgzip -k -f "$f"
+  tabix -f -p vcf "$f.gz"
+done
+
+**Output: Compressed and indexed INDEL VCF files (.vcf.gz + .tbi)** 
+
+## 2. Normalize files with bcftools
+INDELs are normalized using bcftools norm to ensure:
+- Left-alignment
+- Consistent REF/ALT representation
+- Proper handling of multi-allelic sites
+
+This step is essential before reconstructing sequences that include INDELs.
+
+
+REF=/path_to_fasta/Pfalciparum.genome.fasta
+
+for f in P35771_10[0-6][0-9]_T1_INDEL.filtered.final.PASS.bed.filtered.annot.vcf.gz \
+         P35771_107[0-9]_T1_INDEL.filtered.final.PASS.bed.filtered.annot.vcf.gz
+do
+  out="${f%.vcf.gz}.norm.vcf.gz"
+  bcftools norm -f "$REF" -m -both "$f" -Oz -o "$out"
+  tabix -f -p vcf "$out"
+done
+
+
+**Output: Normalized INDEL VCF files (*.norm.vcf.gz)**
+
+## 3. Extract MSP2 Indel variants
+
+Normalized INDEL VCF files are queried to extract all variants overlapping the
+MSP2 locus.
+The resulting table consolidates INDEL variants across all samples.
+
+
+cd /data/Yanka/ngs_ana2025/output/gatk4/indel_travelers/vcf_indel_files
+
+for f in P35771_10[0-6][0-9]_T1_INDEL.filtered.final.PASS.bed.filtered.annot.norm.vcf.gz \
+         P35771_107[0-9]_T1_INDEL.filtered.final.PASS.bed.filtered.annot.norm.vcf.gz
+do
+  bcftools query \
+    -f '%CHROM\t%POS\t%REF\t%ALT[\t%SAMPLE\t%AF]\n' \
+    -r Pf3D7_02_v3:271576-274917 \
+    "$f"
+done > msp2_indels.tsv
+
+
+
+**Output: msp2_indels.tsv: tab-delimited file containing chromosome, position, ref allele, alt allele, sample ID and allele frequency (AF)
+
+**- INDEL normalization is mandatory to avoid coordinate shifts and REF/ALT mismatches during FASTA reconstruction**
+** - Both tables (msp2_variants.tsv and msp2_indels.tsv) are later combined at the sequence reconstruction step.**
+
+
+
