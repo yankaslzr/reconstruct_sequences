@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+import textwrap
+
+# ---------------- CONFIG ----------------
+ref_fasta = "/path_to_fasta/Pfalciparum.genome.fasta"
+
+# SNP TSV (from your SNP VCFs)
+snps_tsv = "/path_to_snps_file/msp2_variants.tsv"
+
+# INDEL TSV (from your normalized INDEL VCFs)
+indels_tsv = "/path_to_indels_file/msp2_indels.tsv"
+
+# Output FASTA (combined SNP + INDEL per sample per AF threshold)
+output_fasta = "/otput_path/msp2_SNP_INDEL_AFthresholds_WITHREF.fasta"
+
+chrom = "Pf3D7_02_v3"
+start = 271576  # 1-based inclusive
+end   = 274917  # 1-based inclusive
+gene_id = "PF3D7_0206800"
+gene_name = "msp2"
+
+af_thresholds = [0.01, 0.05, 0.10, 0.20, 0.50, 0.90]
+
+# ---------------- HELPERS ----------------
+def load_reference_region(fasta_path, chrom, start, end):
+    """Load region [start,end] (1-based inclusive) from a multi-FASTA genome."""
+    seq = []
+    current = None
+    with open(fasta_path, "r") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                current = line[1:].split()[0]
+                continue
+            if current == chrom:
+                seq.append(line.upper())
+
+    if not seq:
+        raise ValueError(f"Chromosome {chrom} not found in {fasta_path}")
+
+    full = "".join(seq)
+    region = full[start-1:end]  # python slicing: end is exclusive; coords end is inclusive
+    if len(region) != (end - start + 1):
+        raise ValueError("Region length mismatch with start/end.")
+    return region
+
+
+def parse_tsv_variants(tsv_path, expected_chrom, start, end):
+    """
+    Parse TSV variants into dict: variants_by_sample[sample] = list of dicts {pos, ref, alt, af}
+    Works for both TSV styles:
+      SNP TSV:   CHROM POS REF ALT SAMPLE GT AF
+      INDEL TSV: CHROM POS REF ALT SAMPLE AF
+    Strategy: take AF from the last column; SAMPLE from column 5.
+    """
+    variants_by_sample = {}
+
+    with open(tsv_path, "r") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            cols = line.split("\t")
+            if len(cols) < 6:
+                continue
+
+            chrom_v = cols[0]
+            pos_s   = cols[1]
+            ref     = cols[2]
+            alt_s   = cols[3]
+            sample  = cols[4]
+            af_s    = cols[-1]   # last column should be AF
+
+            if chrom_v != expected_chrom:
+                continue
+
+            try:
+                pos = int(pos_s)
+            except ValueError:
+                continue
+
+            if pos < start or pos > end:
+                continue
+
+            # ALT/AF may be multi-allelic (A,G and 0.2,0.8)
+            alts = alt_s.split(",")
+            afs = [float(x) for x in af_s.split(",")]
+
+            best_idx = max(range(len(afs)), key=lambda i: afs[i])
+            best_alt = alts[best_idx]
+            best_af  = afs[best_idx]
+
+            variants_by_sample.setdefault(sample, []).append({
+                "pos": pos,
+                "ref": ref,
+                "alt": best_alt,
+                "af":  best_af,
+            })
+
+    return variants_by_sample
+
+
+def merge_variant_dicts(dict_a, dict_b):
+    """Merge two variants_by_sample dicts (SNP + INDEL) by concatenating lists."""
+    out = {}
+    for d in (dict_a, dict_b):
+        for sample, vlist in d.items():
+            out.setdefault(sample, []).extend(vlist)
+    return out
+
+
+def apply_variants_with_threshold(ref_seq, var_list, region_start, af_thr):
+    """
+    Build one sequence by applying all variants with AF >= af_thr.
+    Handles INDELs using an offset that tracks length changes.
+    """
+    seq = ref_seq
+    offset = 0
+
+    # Sort by position; for same POS, apply longer REF first (helps with overlaps)
+    var_list_sorted = sorted(var_list, key=lambda v: (v["pos"], -len(v["ref"])))
+
+    skipped_ref_mismatch = 0
+    skipped_bounds = 0
+
+    for v in var_list_sorted:
+        if v["af"] < af_thr:
+            continue
+
+        ref = v["ref"]
+        alt = v["alt"]
+
+        idx0 = (v["pos"] - region_start) + offset  # 0-based index in *current* seq
+
+        if idx0 < 0 or (idx0 + len(ref)) > len(seq):
+            skipped_bounds += 1
+            continue
+
+        if seq[idx0:idx0 + len(ref)] != ref:
+            # This can happen if variants overlap, or if REF/ALT isn't perfectly compatible
+            skipped_ref_mismatch += 1
+            continue
+
+        # Apply edit
+        seq = seq[:idx0] + alt + seq[idx0 + len(ref):]
+        offset += (len(alt) - len(ref))
+
+    return seq, skipped_ref_mismatch, skipped_bounds
+
+
+def write_fasta(ref_seq, variants_by_sample, thresholds, out_path):
+    with open(out_path, "w") as out:
+        # Write reference first
+        ref_header = f">Reference={gene_id};Gene={gene_name};Region={chrom}:{start}-{end}"
+        out.write(ref_header + "\n")
+        for chunk in textwrap.wrap(ref_seq, 60):
+            out.write(chunk + "\n")
+
+        # Write sample sequences
+        for sample in sorted(variants_by_sample.keys()):
+            vlist = variants_by_sample[sample]
+            for thr in thresholds:
+                seq, n_mismatch, n_bounds = apply_variants_with_threshold(ref_seq, vlist, start, thr)
+                header = f">Sample={sample};AFmin={thr:.2f};Gene={gene_id};Region={chrom}:{start}-{end};SkippedREF={n_mismatch};SkippedBounds={n_bounds}"
+                out.write(header + "\n")
+                for chunk in textwrap.wrap(seq, 60):
+                    out.write(chunk + "\n")
+
+
+# ---------------- MAIN ----------------
+if __name__ == "__main__":
+    print("Loading MSP2 reference region...")
+    ref_region = load_reference_region(ref_fasta, chrom, start, end)
+    print(f"Reference length: {len(ref_region)} nt")
+
+    print("Reading SNP TSV...")
+    snps = parse_tsv_variants(snps_tsv, chrom, start, end)
+    print(f"SNP samples: {len(snps)}")
+
+    print("Reading INDEL TSV...")
+    indels = parse_tsv_variants(indels_tsv, chrom, start, end)
+    print(f"INDEL samples: {len(indels)}")
+
+    print("Merging SNP + INDEL variants...")
+    merged = merge_variant_dicts(snps, indels)
+    print(f"Total samples (merged): {len(merged)}")
+
+    print("Writing combined FASTA...")
+    write_fasta(ref_region, merged, af_thresholds, output_fasta)
+
+    print(f"Done. Output FASTA: {output_fasta}")
