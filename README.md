@@ -184,4 +184,5 @@ This step extracts the MSP2 reference sequence directly from the Plasmodium falc
 
 The reference sequence can be appended to the reconstructed FASTA file to facilitate alignment, visualization, and comparative analyses.
 
+## 4. To do the same for INDELS data, follow the steps present in /scripts/indels/generate_indels_file
 
