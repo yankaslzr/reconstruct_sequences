@@ -69,4 +69,5 @@ done > msp2_indels.tsv
 ** - Both tables (msp2_variants.tsv and msp2_indels.tsv) are later combined at the sequence reconstruction step.**
 
 
+## 4. Execute script "generate_combined_fasta.py" to generate combined fasta files.
 
